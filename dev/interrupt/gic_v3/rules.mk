@@ -1,0 +1,10 @@
+LOCAL_DIR := $(GET_LOCAL_DIR)
+
+MODULE := $(LOCAL_DIR)
+
+MODULE_SRCS += \
+	$(LOCAL_DIR)/gic_v3.c
+
+GLOBAL_DEFINES += WITH_DEV_INTERRUPT_ARM_GIC=1
+
+include make/module.mk

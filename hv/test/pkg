@@ -1,0 +1,26 @@
+#!/bin/sh
+
+if [ $# -lt 1 ]
+then
+	echo "lack of args"
+	exit 0
+fi
+
+if [ ! -d $1 ]
+then
+	echo "$1 is not directory"
+	exit 0
+fi
+
+cd $1
+rm -rf $1.dtb
+rm -rf vmcfg.dtb
+dtc -I dts -O dtb $1.dts -o $1.dtb
+dtc -I dts -O dtb vmcfg.dts -o vmcfg.dtb
+cd -
+
+sudo umount root
+sudo mount rootfs.img root
+sudo rm -rf ./root/*
+sudo cp -rf $1/* root/
+sudo umount root

@@ -1,0 +1,175 @@
+image: fedora:32
+
+before_script:
+ - dnf update -y
+ - dnf install -y make python
+
+build-aarch64:
+ script:
+ - dnf install -y qemu-system-aarch64 gcc-aarch64-linux-gnu
+ - ./configure --arch=aarch64 --cross-prefix=aarch64-linux-gnu-
+ - make -j2
+ - ACCEL=tcg MAX_SMP=8 ./run_tests.sh
+     selftest-setup selftest-vectors-kernel selftest-vectors-user selftest-smp
+     pci-test pmu-cycle-counter pmu-event-counter-config pmu-sw-incr gicv2-ipi
+     gicv2-mmio gicv3-ipi gicv2-active gicv3-active psci timer cache
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-arm:
+ script:
+ - dnf install -y qemu-system-arm gcc-arm-linux-gnu
+ - mkdir build
+ - cd build
+ - ../configure --arch=arm --cross-prefix=arm-linux-gnu-
+ - make -j2
+ - ACCEL=tcg MAX_SMP=8 ./run_tests.sh
+     selftest-setup selftest-vectors-kernel selftest-vectors-user selftest-smp
+     pci-test pmu-cycle-counter gicv2-ipi gicv2-mmio gicv3-ipi gicv2-active
+     gicv3-active psci
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-ppc64be:
+ script:
+ - dnf install -y qemu-system-ppc gcc-powerpc64-linux-gnu
+ - mkdir build
+ - cd build
+ - ../configure --arch=ppc64 --endian=big --cross-prefix=powerpc64-linux-gnu-
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     selftest-setup spapr_hcall rtas-get-time-of-day rtas-get-time-of-day-base
+     rtas-set-time-of-day emulator
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-ppc64le:
+ script:
+ - dnf install -y qemu-system-ppc gcc-powerpc64-linux-gnu
+ - ./configure --arch=ppc64 --endian=little --cross-prefix=powerpc64-linux-gnu-
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     selftest-setup spapr_hcall rtas-get-time-of-day rtas-get-time-of-day-base
+     rtas-set-time-of-day emulator
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-s390x:
+ script:
+ - dnf install -y qemu-system-s390x gcc-s390x-linux-gnu
+ - mkdir build
+ - cd build
+ - ../configure --arch=s390x --cross-prefix=s390x-linux-gnu-
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     selftest-setup intercept emulator sieve diag10 diag308 vector diag288
+     stsi sclp-1g sclp-3g
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-x86_64:
+ script:
+ - dnf install -y qemu-system-x86 gcc
+ - ./configure --arch=x86_64
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     ioapic-split smptest smptest3 vmexit_cpuid vmexit_mov_from_cr8
+     vmexit_mov_to_cr8 vmexit_inl_pmtimer  vmexit_ipi vmexit_ipi_halt
+     vmexit_ple_round_robin vmexit_tscdeadline vmexit_tscdeadline_immed
+     eventinj port80 setjmp sieve syscall tsc rmap_chain umip intel_iommu
+     rdpru pku pks smap tsc_adjust xsave
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-i386:
+ script:
+ - dnf install -y qemu-system-x86 gcc
+ - mkdir build
+ - cd build
+ - ../configure --arch=i386
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     cmpxchg8b vmexit_cpuid vmexit_mov_from_cr8 vmexit_mov_to_cr8
+     vmexit_inl_pmtimer vmexit_ipi vmexit_ipi_halt vmexit_ple_round_robin
+     vmexit_tscdeadline vmexit_tscdeadline_immed eventinj port80 setjmp sieve
+     tsc taskswitch umip rdpru smap tsc_adjust xsave
+     | tee results.txt
+ - if grep -q FAIL results.txt ; then exit 1 ; fi
+
+build-clang:
+ script:
+ - dnf install -y qemu-system-x86 clang
+ - ./configure --arch=x86_64 --cc=clang
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     ioapic-split smptest smptest3 vmexit_cpuid vmexit_mov_from_cr8
+     vmexit_mov_to_cr8 vmexit_inl_pmtimer  vmexit_ipi vmexit_ipi_halt
+     vmexit_ple_round_robin vmexit_tscdeadline vmexit_tscdeadline_immed
+     eventinj port80 setjmp syscall tsc rmap_chain umip intel_iommu
+     rdpru pku pks smap tsc_adjust xsave
+     | tee results.txt
+ - grep -q PASS results.txt && ! grep -q FAIL results.txt
+
+build-centos7:
+ image: centos:7
+ before_script:
+ - yum update -y
+ - yum install -y make python qemu-kvm gcc
+ script:
+ - mkdir build
+ - cd build
+ - ../configure --arch=x86_64 --disable-pretty-print-stacks
+ - make -j2
+ - ACCEL=tcg ./run_tests.sh
+     vmexit_cpuid vmexit_mov_from_cr8 vmexit_mov_to_cr8 vmexit_inl_pmtimer
+     vmexit_ple_round_robin vmexit_tscdeadline vmexit_tscdeadline_immed port80
+     setjmp sieve tsc rmap_chain umip
+     | tee results.txt
+ - grep -q PASS results.txt && ! grep -q FAIL results.txt
+
+# Cirrus-CI provides containers with macOS and Linux with KVM enabled,
+# so we can test some scenarios there that are not possible with the
+# gitlab-CI shared runners. We use the "cirrus-run" container from the
+# libvirt project to start the jobs. See the following URL for more
+# information how to set up your environment to use these containers:
+#
+#   https://gitlab.com/libvirt/libvirt/-/blob/v7.0.0/ci/README.rst
+#
+.cirrus_build_job_template: &cirrus_build_job_definition
+ image: registry.gitlab.com/libvirt/libvirt-ci/cirrus-run:master
+ before_script:
+  - sed -e "s|[@]CI_REPOSITORY_URL@|$CI_REPOSITORY_URL|g"
+        -e "s|[@]CI_COMMIT_REF_NAME@|$CI_COMMIT_REF_NAME|g"
+        -e "s|[@]CI_COMMIT_SHA@|$CI_COMMIT_SHA|g"
+        < ci/$CI_JOB_NAME.yml > ci/_$CI_JOB_NAME.yml
+ script:
+  - cirrus-run -v --show-build-log always ci/_$CI_JOB_NAME.yml
+ only:
+  variables:
+   - $CIRRUS_GITHUB_REPO
+   - $CIRRUS_API_TOKEN
+
+cirrus-ci-fedora:
+ <<: *cirrus_build_job_definition
+
+cirrus-ci-macos-i386:
+ <<: *cirrus_build_job_definition
+
+cirrus-ci-macos-x86-64:
+ <<: *cirrus_build_job_definition
+
+s390x-kvm:
+ before_script: []
+ tags:
+  - s390x-z15-vm
+ script:
+  - ./configure --arch=s390x
+  - make -j$(nproc)
+  - ACCEL=kvm ./run_tests.sh
+      selftest-setup intercept emulator sieve sthyi skey diag10 diag308 pfmf
+      cmm vector gs iep cpumodel diag288 stsi sclp-1g sclp-3g css skrf sie
+      | tee results.txt
+  - grep -q PASS results.txt && ! grep -q FAIL results.txt
+ only:
+  variables:
+   - $S390X_Z15_RUNNER_AVAILABLE

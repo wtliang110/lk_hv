@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+
+if [ -z "${BASH_VERSINFO[0]}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
+    echo "Error: Bash version 4 or newer is required for the kvm-unit-tests"
+    exit 1
+fi
+
+srcdir=$(cd "$(dirname "$0")"; pwd)
+prefix=/usr/local
+cc=gcc
+cflags=
+ld=ld
+objcopy=objcopy
+objdump=objdump
+ar=ar
+addr2line=addr2line
+arch=$(uname -m | sed -e 's/i.86/i386/;s/arm.*/arm/;s/ppc64.*/ppc64/')
+host=$arch
+cross_prefix=
+endian=""
+pretty_print_stacks=yes
+environ_default=yes
+u32_long=
+wa_divide=
+target=
+errata_force=0
+erratatxt="$srcdir/errata.txt"
+host_key_document=
+page_size=
+earlycon=
+
+usage() {
+    cat <<-EOF
+	Usage: $0 [options]
+
+	Options include:
+	    --arch=ARCH            architecture to compile for ($arch)
+	    --processor=PROCESSOR  processor to compile for ($arch)
+	    --target=TARGET        target platform that the tests will be running on (qemu or
+	                           kvmtool, default is qemu) (arm/arm64 only)
+	    --cross-prefix=PREFIX  cross compiler prefix
+	    --cc=CC                c compiler to use ($cc)
+	    --cflags=FLAGS         extra options to be passed to the c compiler
+	    --ld=LD                ld linker to use ($ld)
+	    --prefix=PREFIX        where to install things ($prefix)
+	    --endian=ENDIAN        endianness to compile for (little or big, ppc64 only)
+	    --[enable|disable]-pretty-print-stacks
+	                           enable or disable pretty stack printing (enabled by default)
+	    --[enable|disable]-default-environ
+	                           enable or disable the generation of a default environ when
+	                           no environ is provided by the user (enabled by default)
+	    --erratatxt=FILE       specify a file to use instead of errata.txt. Use
+	                           '--erratatxt=' to ensure no file is used.
+	    --host-key-document=HOST_KEY_DOCUMENT
+	                           Specify the machine-specific host-key document for creating
+	                           a PVM image with 'genprotimg' (s390x only)
+	    --page-size=PAGE_SIZE
+	                           Specify the page size (translation granule) (4k, 16k or
+	                           64k, default is 64k, arm64 only)
+	    --earlycon=EARLYCON
+	                           Specify the UART name, type and address (optional, arm and
+	                           arm64 only). The specified address will overwrite the UART
+	                           address set by the --target option. EARLYCON can be one of
+	                           (case sensitive):
+	               uart[8250],mmio,ADDR
+	                           Specify an 8250 compatible UART at address ADDR. Supported
+	                           register stride is 8 bit only.
+	               pl011,ADDR
+	               pl011,mmio32,ADDR
+	                           Specify a PL011 compatible UART at address ADDR. Supported
+	                           register stride is 32 bit only.
+EOF
+    exit 1
+}
+
+while [[ "$1" = -* ]]; do
+    opt="$1"; shift
+    arg=
+    if [[ "$opt" = *=* ]]; then
+	arg="${opt#*=}"
+	opt="${opt%%=*}"
+    fi
+    case "$opt" in
+	--prefix)
+	    prefix="$arg"
+	    ;;
+        --arch)
+	    arch="$arg"
+	    ;;
+        --processor)
+	    processor="$arg"
+	    ;;
+	--target)
+	    target="$arg"
+	    ;;
+	--cross-prefix)
+	    cross_prefix="$arg"
+	    ;;
+	--endian)
+	    endian="$arg"
+	    ;;
+	--cc)
+	    cc="$arg"
+	    ;;
+	--cflags)
+	    cflags="$arg"
+	    ;;
+	--ld)
+	    ld="$arg"
+	    ;;
+	--enable-pretty-print-stacks)
+	    pretty_print_stacks=yes
+	    ;;
+	--disable-pretty-print-stacks)
+	    pretty_print_stacks=no
+	    ;;
+	--enable-default-environ)
+	    environ_default=yes
+	    ;;
+	--disable-default-environ)
+	    environ_default=no
+	    ;;
+	--erratatxt)
+	    erratatxt=
+	    [ "$arg" ] && erratatxt=$(eval realpath "$arg")
+	    ;;
+	--host-key-document)
+	    host_key_document="$arg"
+	    ;;
+	--page-size)
+	    page_size="$arg"
+	    ;;
+	--earlycon)
+	    earlycon="$arg"
+	    ;;
+	--help)
+	    usage
+	    ;;
+	*)
+	    usage
+	    ;;
+    esac
+done
+
+if [ -n "$host_key_document" ] && [ ! -f "$host_key_document" ]; then
+    echo "Host key document doesn't exist at the specified location."
+    exit 1
+fi
+
+if [ "$erratatxt" ] && [ ! -f "$erratatxt" ]; then
+    echo "erratatxt: $erratatxt does not exist or is not a regular file"
+    exit 1
+fi
+
+arch_name=$arch
+[ "$arch" = "aarch64" ] && arch="arm64"
+[ "$arch_name" = "arm64" ] && arch_name="aarch64"
+
+if [ -z "$target" ]; then
+    target="qemu"
+else
+    if [ "$arch" != "arm64" ] && [ "$arch" != "arm" ]; then
+        echo "--target is not supported for $arch"
+        usage
+    fi
+fi
+
+if [ -z "$page_size" ]; then
+    [ "$arch" = "arm64" ] && page_size="65536"
+    [ "$arch" = "arm" ] && page_size="4096"
+else
+    if [ "$arch" != "arm64" ]; then
+        echo "--page-size is not supported for $arch"
+        usage
+    fi
+
+    if [ "${page_size: -1}" = "K" ] || [ "${page_size: -1}" = "k" ]; then
+        page_size=$(( ${page_size%?} * 1024 ))
+    fi
+    if [ "$page_size" != "4096" ] && [ "$page_size" != "16384" ] &&
+           [ "$page_size" != "65536" ]; then
+        echo "arm64 doesn't support page size of $page_size"
+        usage
+    fi
+fi
+
+[ -z "$processor" ] && processor="$arch"
+
+if [ "$processor" = "arm64" ]; then
+    processor="cortex-a57"
+elif [ "$processor" = "arm" ]; then
+    processor="cortex-a15"
+fi
+
+if [ "$arch" = "i386" ] || [ "$arch" = "x86_64" ]; then
+    testdir=x86
+elif [ "$arch" = "arm" ] || [ "$arch" = "arm64" ]; then
+    testdir=arm
+    if [ "$target" = "qemu" ]; then
+        arm_uart_early_addr=0x09000000
+    elif [ "$target" = "kvmtool" ]; then
+        arm_uart_early_addr=0x1000000
+        errata_force=1
+    else
+        echo "--target must be one of 'qemu' or 'kvmtool'!"
+        usage
+    fi
+
+    if [ "$earlycon" ]; then
+        IFS=, read -r name type_addr addr <<<"$earlycon"
+        if [ "$name" != "uart" ] && [ "$name" != "uart8250" ] &&
+                [ "$name" != "pl011" ]; then
+            echo "unknown earlycon name: $name"
+            usage
+        fi
+
+        if [ "$name" = "pl011" ]; then
+            if [ -z "$addr" ]; then
+                addr=$type_addr
+            else
+                if [ "$type_addr" != "mmio32" ]; then
+                    echo "unknown $name earlycon type: $type_addr"
+                    usage
+                fi
+            fi
+        else
+            if [ "$type_addr" != "mmio" ]; then
+                echo "unknown $name earlycon type: $type_addr"
+                usage
+            fi
+        fi
+
+        if [ -z "$addr" ]; then
+            echo "missing $name earlycon address"
+            usage
+        fi
+        if [[ $addr =~ ^0(x|X)[0-9a-fA-F]+$ ]] ||
+                [[ $addr =~ ^[0-9]+$ ]]; then
+            arm_uart_early_addr=$addr
+        else
+            echo "invalid $name earlycon address: $addr"
+            usage
+        fi
+    fi
+elif [ "$arch" = "ppc64" ]; then
+    testdir=powerpc
+    firmware="$testdir/boot_rom.bin"
+    if [ "$endian" != "little" ] && [ "$endian" != "big" ]; then
+        echo "You must provide endianness (big or little)!"
+        usage
+    fi
+else
+    testdir=$arch
+fi
+if [ ! -d "$srcdir/$testdir" ]; then
+    echo "$testdir does not exist!"
+    exit 1
+fi
+if [ -f "$srcdir/$testdir/run" ]; then
+    ln -fs "$srcdir/$testdir/run" $testdir-run
+fi
+
+# check if uint32_t needs a long format modifier
+cat << EOF > lib-test.c
+__UINT32_TYPE__
+EOF
+u32_long=$("$cross_prefix$cc" -E lib-test.c | grep -v '^#' | grep -q long && echo yes)
+rm -f lib-test.c
+
+# check if slash can be used for division
+if [ "$arch" = "i386" ] || [ "$arch" = "x86_64" ]; then
+  cat << EOF > lib-test.S
+foo:
+    movl (8 / 2), %eax
+EOF
+  wa_divide=$("$cross_prefix$cc" -c lib-test.S >/dev/null 2>&1 || echo yes)
+  rm -f lib-test.{o,S}
+fi
+
+# require enhanced getopt
+getopt -T > /dev/null
+if [ $? -ne 4 ]; then
+    echo "Enhanced getopt is not available, add it to your PATH?"
+    exit 1
+fi
+
+# Are we in a separate build tree? If so, link the Makefile
+# and shared stuff so that 'make' and run_tests.sh work.
+if test ! -e Makefile; then
+    echo "linking Makefile..."
+    ln -s "$srcdir/Makefile" .
+
+    echo "linking tests..."
+    mkdir -p $testdir
+    ln -sf "$srcdir/$testdir/run" $testdir/
+    ln -sf "$srcdir/$testdir/unittests.cfg" $testdir/
+    ln -sf "$srcdir/run_tests.sh"
+
+    if [ -d "$srcdir/$testdir/snippets" ]; then
+        mkdir -p "$testdir/snippets/c"
+    fi
+
+    echo "linking scripts..."
+    ln -sf "$srcdir/scripts"
+fi
+
+# link lib/asm for the architecture
+rm -f lib/asm
+asm="asm-generic"
+if [ -d "$srcdir/lib/$arch/asm" ]; then
+	asm="$srcdir/lib/$arch/asm"
+elif [ -d "$srcdir/lib/$testdir/asm" ]; then
+	asm="$srcdir/lib/$testdir/asm"
+fi
+mkdir -p lib
+ln -sf "$asm" lib/asm
+
+
+# create the config
+cat <<EOF > config.mak
+SRCDIR=$srcdir
+PREFIX=$prefix
+HOST=$host
+ARCH=$arch
+ARCH_NAME=$arch_name
+PROCESSOR=$processor
+CC=$cross_prefix$cc
+CFLAGS=$cflags
+LD=$cross_prefix$ld
+OBJCOPY=$cross_prefix$objcopy
+OBJDUMP=$cross_prefix$objdump
+AR=$cross_prefix$ar
+ADDR2LINE=$cross_prefix$addr2line
+TEST_DIR=$testdir
+FIRMWARE=$firmware
+ENDIAN=$endian
+PRETTY_PRINT_STACKS=$pretty_print_stacks
+ENVIRON_DEFAULT=$environ_default
+ERRATATXT=$erratatxt
+U32_LONG_FMT=$u32_long
+WA_DIVIDE=$wa_divide
+GENPROTIMG=${GENPROTIMG-genprotimg}
+HOST_KEY_DOCUMENT=$host_key_document
+EOF
+if [ "$arch" = "arm" ] || [ "$arch" = "arm64" ]; then
+    echo "TARGET=$target" >> config.mak
+fi
+
+cat <<EOF > lib/config.h
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
+/*
+ * Generated file. DO NOT MODIFY.
+ *
+ */
+
+EOF
+if [ "$arch" = "arm" ] || [ "$arch" = "arm64" ]; then
+cat <<EOF >> lib/config.h
+
+#define CONFIG_UART_EARLY_BASE ${arm_uart_early_addr}
+#define CONFIG_ERRATA_FORCE ${errata_force}
+#define CONFIG_PAGE_SIZE _AC(${page_size}, UL)
+
+EOF
+fi
+echo "#endif" >> lib/config.h

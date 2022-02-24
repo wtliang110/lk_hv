@@ -1,0 +1,19 @@
+hypervisor extension for lk, list the todo list
+
+1. vm configuration
+   ----use ext2 virtio bio to store vm image
+   ----use ext2 as root device
+   ----support more than 1 cpu core 
+   ----vm  configuration format: image location/dts location/and others
+   ----vm  configuration parse
+ 
+2. virtual memory
+3. virtual cpu
+4. virtual interrupt
+5. device pt
+6. virtio paravirtualization
+7. network 
+8. storage 
+9. guest linux
+
+how virtulize fpu ???????????????????????????

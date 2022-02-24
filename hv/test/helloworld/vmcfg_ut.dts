@@ -1,0 +1,24 @@
+/dts-v1/;
+
+/ {
+	num-vms = <0x1>;
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+
+	vm@1 {
+		image   = "hw.elf";
+		fdt = "hw.dtb";
+		os_typs = <0x1>;
+		image_type = <0x1>;
+		priority = <0x1>;
+		lable = "helloworld";
+		timeslice = <0x64>;
+		auto_boot = <0>;
+		ram_reg = <0x0 0x0 0x0 0x40>;
+		cpus {
+			cpu_num = <0x1>;
+			mode = <64>;
+			affinity = <0>;
+		};
+	};	
+};

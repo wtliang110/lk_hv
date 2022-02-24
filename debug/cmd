@@ -1,0 +1,13 @@
+export ARCH_arm64_TOOLCHAIN_PREFIX=aarch64-linux-gnu-
+qemu-system-aarch64 -cpu cortex-a53 -m 512 -smp 1 -machine virt -kernel build-qemu-virt-arm64-test/lk.elf -nographic
+qemu-system-aarch64 -cpu cortex-a53 -m 512 -smp 1 -machine virt,dumpdtb=qemu-virt.dtb -kernel build-qemu-virt-arm64-test/lk.elf -nographic
+qemu-system-aarch64 -cpu cortex-a53 -m 512 -smp 1 -machine virt,virtualization=on,gic-version -kernel build-qemu-virt-arm64-test/lk.elf -nographic
+./scripts/make-parallel PROJECT=qemu-virt-arm64-test
+qemu-system-aarch64 -cpu cortex-a53 -m 512 -smp 1 -machine virt,virtualization=on -kernel build-qemu-virt-arm64-test/lk.elf -nographic -S -s
+qemu-system-aarch64 -cpu cortex-a53 -m 512 -smp 1 -machine virt,virtualization=on -kernel build-qemu-virt-arm64-test/lk.elf -device virtio-blk-device,drive=drive0,id=virtblk0,num-queues=4, -drive file=rootfs.img,format=raw,if=none,id=drive0  -nographic
+
+qemu-system-aarch64  -cpu cortex-a53 -m 512 -smp 1 -machine virt,virtualization=on -kernel build-qemu-virt-arm64-test/lk.elf -dtb qemu-virt.dtb -append "root=virtio0,ext2"  -device virtio-blk-device,drive=drive0,id=virtblk0,num-queues=4, -drive file=/home/wangtianliang/work/lk/hv/test/rootfs.img,format=raw,if=none,id=drive0  -nographic
+
+qemu-system-aarch64  -cpu cortex-a53 -m 512 -smp 1 -machine virt,virtualization=on -kernel build-qemu-virt-arm64-test/lk.elf -append "root=virtio0,ext2"  -device virtio-blk-device,drive=drive0,id=virtblk0,num-queues=4, -drive file=/home/wangtianliang/work/lk/hv/test/rootfs.img,format=raw,if=none,id=drive0  -nographic
+
+qemu-system-aarch64  -cpu cortex-a53 -m 512 -smp 4 -machine virt,virtualization=on,gic-version=3 -kernel build-qemu-virt-arm64-test/lk.elf -append "root=virtio0,ext2"  -device virtio-blk-device,drive=drive0,id=virtblk0,num-queues=4, -drive file=/home/wangtianliang/work/lk/hv/test/rootfs.img,format=raw,if=none,id=drive0  -nographic

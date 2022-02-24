@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# build everything in the projects directory
+PROJECTS=$(echo project/*.mk | xargs -n1 basename | sed 's/\.mk//')
+FAILED=""
+
+for p in $PROJECTS; do
+    PROJECT=$p nice $DIR/make-parallel || FAILED="$FAILED $p"
+done
+
+if [ "$FAILED" != "" ]; then
+    echo
+    echo some projects have failed to build:
+    echo $FAILED
+fi

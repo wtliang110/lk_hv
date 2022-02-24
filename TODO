@@ -1,0 +1,15 @@
+1. memory of arch todo list (done)
+2. vcpu sleep
+3. vcpu schedule during thread schedulel
+4. test case for 2/3
+5. test case for 1
+
+todo:
+1. (will continue sleep after interrupt ready)
+2. schedule context 
+
+1. interrupt
+2. timer
+3. traps & hv
+4. device
+5. mmio

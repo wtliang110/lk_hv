@@ -1,0 +1,24 @@
+/dts-v1/;
+
+/ {
+	num-vms = <0x1>;
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+
+	vm@1 {
+		image   = "psci.elf";
+		fdt = "psci.dtb";
+		os_typs = <0x1>;
+		image_type = <0x1>;
+		priority = <0x1>;
+		lable = "psci";
+		timeslice = <0x64>;
+		auto_boot = <0>;
+		ram_reg = <0x0 0x0 0x0 0x40>;
+		cpus {
+			cpu_num = <0x4>;
+			mode = <64>;
+			affinity = <0x0 0x1 0x2 0x3>;
+		};
+	};	
+};

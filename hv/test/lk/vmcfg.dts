@@ -1,0 +1,23 @@
+/dts-v1/;
+
+/ {
+	num-vms = <0x1>;
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+
+	vm@1 {
+		image   = "vm_lk.elf";
+		fdt     = "vm_lk.dtb";
+		os_typs = <0x1>;
+		image_type = <0x1>;
+		priority = <0x1>;
+		lable = "lk_test";
+		timeslice = <0x64>;
+		ram_reg = <0x0 0x40000000 0x0 0x100>;
+		cpus {
+			cpu_num = <0x2>;
+			mode = <64>;
+			affinity = <0xff, 0xff>;
+		};
+	};	
+};

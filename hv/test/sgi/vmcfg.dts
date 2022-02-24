@@ -1,0 +1,41 @@
+/dts-v1/;
+
+/ {
+	num-vms = <0x1>;
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+
+	vm@1 {
+                #size-cells = <0x2>;
+                #address-cells = <0x2>;
+		image   = "gic.elf";
+		fdt = "sgi.dtb";
+		os_typs = <0x1>;
+		image_type = <0x1>;
+		priority = <0x1>;
+		lable = "sgi";
+		timeslice = <0x64>;
+		auto_boot = <0>;
+		ram_reg = <0x0 0x0 0x0 0x40>;
+		cpus {
+			cpu_num = <0x2>;
+			mode = <64>;
+			affinity = <0x0 0x1>;
+		};
+
+		/* this is a special virtulized device */
+		intc@8000000 {
+                	phandle = <0x8001>;
+			#redistributor-regions = <0x1>;
+                	compatible = "arm,gic-v3";
+                	ranges;
+                	#size-cells = <0x2>;
+                	#address-cells = <0x2>;
+                	reg = <0x0 0x8000000 0x0 0x10000 0x0 0x80a0000 0x0 0xf60000>;
+		};
+			
+		/* emulation device  */
+		device  {
+		};
+	};	
+};
